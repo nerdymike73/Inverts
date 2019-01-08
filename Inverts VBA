@@ -1,0 +1,350 @@
+Dim wb As Workbook
+Dim mhwb As Workbook
+Dim pipeswb As Workbook
+Dim rslts As Worksheet
+Dim pipes As Worksheet
+Dim mh As Worksheet
+Dim lastcol As Long
+Dim endrange As Range
+Dim startrange As Range
+Dim manholes As Range
+Dim headers() As Variant
+Dim prevpipes As Integer
+Dim nextpipes As Integer
+Dim l As Long
+ 
+ 
+Sub inverts()
+ 
+Set wb = ThisWorkbook
+Set rslts = wb.Sheets("Sheet1")
+rslts.Cells.ClearContents
+ 
+Set mhwb = Workbooks.Open("G:\111\11144295 City of Frederick Sewer Master Plan\TECH\Script Development\manholes.xls", True, True)
+Set pipeswb = Workbooks.Open("G:\111\11144295 City of Frederick Sewer Master Plan\TECH\Script Development\Pipes.xls", True, True)
+ 
+'Create Headers
+headers() = Array("MH not in MH", "Start Nodes", "Invert", "Duplicate Starts", "Count", "End Nodes", "Invert", "Duplicates", "Count", "",+_
+           "Pipe ID", "Slope", "MHS Inv", "MHE Inv", "Interpolate?", "Preceding Pipes", "Following Pipes", "New Slope")
+ 
+With rslts
+For i = LBound(headers()) To UBound(headers())
+.Cells(1, 1 + i).Value = headers(i)
+Next i
+End With
+ 
+ 
+'get manholes with zero slope
+'get manholes with zero slope that are nodes
+'calculate slopes and find slope errors
+'check to see if manholes with errors are in branch
+'find previous manholes for pipes with slope error - unless the error is a start node then mark as a start node and move to next
+'recalculate slope
+ 
+Set mh = mhwb.Worksheets("manholes")
+Set pipes = pipeswb.Worksheets("Pipes")
+ 
+lastcol = mh.Cells(1, mh.Columns.Count).End(xlToLeft).Column
+lastcolp = pipes.Cells(1, pipes.Columns.Count).End(xlToLeft).Column
+ 
+For i = 1 To lastcol
+    If mh.Cells(1, i).Value = "PIN_GHD" Then
+        mhID = mh.Cells(1, i).Column
+    ElseIf mh.Cells(1, i).Value = "Invert_GHD" Then
+        invert = mh.Cells(1, i).Column
+    End If
+Next
+ 
+For i = 1 To lastcolp
+    If pipes.Cells(1, i).Value = "MH_FromGHD" Then
+        mhstart = pipes.Cells(1, i).Column
+    ElseIf pipes.Cells(1, i).Value = "MH_ToGHD" Then
+        mhend = pipes.Cells(1, i).Column
+    ElseIf pipes.Cells(1, i).Value = "Length" Then
+        lngth = pipes.Cells(1, i).Column
+    ElseIf pipes.Cells(1, i).Value = "PIN_GHD" Then
+        pipeID = pipes.Cells(1, i).Column
+    End If
+Next
+ 
+Set pipeRange = pipes.Range("A2", Range("A" & Rows.Count).End(xlUp))
+pipeRows = Application.WorksheetFunction.CountA(pipeRange)
+ 
+Set mhrange = mh.Range("A2", mh.Range("A" & Rows.Count).End(xlUp))
+mhRows = Application.WorksheetFunction.CountA(mhrange)
+ 
+ 
+'Check that all manholes in pipes are in manholes and vice versa
+ 
+Set manholes = mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows, mhID))
+ 
+ 
+'this gives manholes that are in the pipes table but not in the manholes table
+j = 2
+ 
+For i = 2 To pipeRows
+ 
+mhe = pipes.Cells(i, mhend)
+ 
+mhs = pipes.Cells(i, mhstart)
+ 
+ 
+    If Application.WorksheetFunction.CountIf(manholes, mhe) = 0 Then
+ 
+        rslts.Cells(j, 1) = mhe
+ 
+        j = j + 1
+ 
+    ElseIf Application.WorksheetFunction.CountIf(manholes, mhs) = 0 Then
+ 
+        rslts.Cells(j, 1) = mhs
+ 
+        j = j + 1
+ 
+    End If
+ 
+Next
+ 
+'get start/end nodes and inverts
+'start nodes will not be interpolated
+ 
+Set ends = pipes.Range(Cells(2, mhend), Cells(pipeRows, mhend))
+ 
+Set starts = pipes.Range(Cells(2, mhstart), Cells(pipeRows, mhstart))
+ 
+j = 2
+k = 2
+ 
+For i = 2 To pipeRows
+ 
+mhe = pipes.Cells(i, mhend).Value
+ 
+mhs = pipes.Cells(i, mhstart).Value
+ 
+    If Application.WorksheetFunction.CountIf(ends, mhs) = 0 Then
+ 
+        rslts.Cells(j, 2) = mhs
+ 
+    If Application.WorksheetFunction.CountIf(rslts.Range("A:A"), mhs) = 0 Then
+ 
+        rslts.Cells(j, 3) = mh.Cells(mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows, mhID)).Find(mhs).Row, invert)
+   
+    End If
+   
+    j = j + 1
+ 
+    ElseIf Application.WorksheetFunction.CountIf(starts, mhe) = 0 Then
+   
+        rslts.Cells(k, 6) = mhe
+   
+    If Application.WorksheetFunction.CountIf(rslts.Range("A:A"), mhe) = 0 Then
+   
+        rslts.Cells(k, 7) = mh.Cells(mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows, mhID)).Find(mhe).Row, invert)
+ 
+    End If
+ 
+    k = k + 1
+ 
+    End If
+ 
+ 
+Next
+ 
+'get duplicate nodes add counts for duplicates/remove duplicates from results
+ 
+Set s_nodes = rslts.Range("B:B")
+s_count = Application.WorksheetFunction.CountA(s_nodes)
+ 
+j = 2
+For i = 2 To s_count
+    s = rslts.Cells(i, 2).Value
+    If Application.WorksheetFunction.CountIf(s_nodes, s) > 1 Then
+        rslts.Cells(j, 4).Value = rslts.Cells(i, 2).Value
+        rslts.Cells(j, 5).Value = pipes.Application.WorksheetFunction.CountIf(s_nodes, s)
+        j = j + 1
+    End If
+Next
+ 
+Set e_nodes = rslts.Range("F:F")
+e_count = Application.WorksheetFunction.CountA(e_nodes)
+ 
+j = 2
+For i = 2 To e_count
+e = rslts.Cells(i, 6).Value
+    If Application.WorksheetFunction.CountIf(e_nodes, e) > 1 Then
+        rslts.Cells(j, 8).Value = rslts.Cells(i, 6).Value
+        rslts.Cells(j, 9).Value = pipes.Application.WorksheetFunction.CountIf(e_nodes, e)
+        j = j + 1
+    End If
+Next
+ 
+'return duplicate nodes only once
+ 
+Set target = rslts.Range("D2", rslts.Range("D" & Rows.Count).End(xlUp)).Resize(, 2)
+target.RemoveDuplicates Columns:=1
+ 
+Set target = rslts.Range("H2", rslts.Range("H" & Rows.Count).End(xlUp)).Resize(, 2)
+target.RemoveDuplicates Columns:=1
+ 
+ 
+'report slope errors
+j = 2
+ 
+For i = 2 To pipeRows
+ 
+mhs = pipes.Cells(i, mhstart)
+ 
+mhe = pipes.Cells(i, mhend)
+ 
+l = pipes.Cells(i, lngth)
+ 
+If Application.WorksheetFunction.CountIf(rslts.Range("A:A"), mhs) = 0 Then
+    mhs_inv = mh.Cells(mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows, mhID)).Find(mhs).Row, invert)
+End If
+ 
+If Application.WorksheetFunction.CountIf(rslts.Range("A:A"), mhe) = 0 Then
+    mhe_inv = mh.Cells(mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows, mhID)).Find(mhe).Row, invert)
+End If
+ 
+slp = (mhs_inv - mhe_inv) / l
+ 
+If slp = 0 Or slp < 0 Or slp > 0.03 Then
+    rslts.Cells(j, "K").Value = pipes.Cells(i, pipeID)
+    If slp = 0 Then
+        rslts.Cells(j, "L").Value = "Zero Slope"
+    ElseIf slp < 0 Then
+        rslts.Cells(j, "L").Value = "Negative Slope"
+    ElseIf slp > 0.03 Then
+        rslts.Cells(j, "L").Value = "Extreme Slope"
+    End If
+   
+    rslts.Cells(j, "M").Value = mhs_inv
+    rslts.Cells(j, "N").Value = mhe_inv
+    rslts.Cells(j, "S").Value = slp
+ 
+ 
+   'Don't interpolate start nodes
+ 
+    If Application.WorksheetFunction.CountIf(rslts.Range("B:B"), mhs) <> 0 Then
+ 
+        rslts.Cells(j, "O") = "No - Start Node"
+ 
+    End If
+   
+ 
+    If Application.WorksheetFunction.CountIf(rslts.Range("F:F"), mhs) <> 0 Then
+ 
+        rslts.Cells(j, "O") = "End Node"
+ 
+    End If
+ 
+ 
+   
+'count preceding and following pipes
+ 
+    prevpipes = Application.WorksheetFunction.CountIf(pipes.Range("E:E"), mhs)
+       
+        rslts.Cells(j, "P") = prevpipes
+ 
+ 
+'Find the preceding pipes start mh inverts
+   
+    If prevpipes = 1 Then
+   
+    mhprev = pipes.Cells(pipes.Range("E2", Range("E" & Rows.Count).End(xlUp)).Find(mhs).Row,+_
+            mhstart).Value
+ 
+           rslts.Cells(j, "R") = mhprev
+ 
+ 
+        'find prev pipe length
+ 
+        lprev = pipes.Cells(pipes.Range("E2", Range("E" & Rows.Count).End(xlUp)).Find(mhs).Row,+_
+                lngth).Value
+                       
+        'find prev mh invert
+        mhprev_inv = mh.Cells(mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows,+_
+                     mhID)).Find(mhprev).Row, invert).Value
+ 
+            rslts.Cells(j, "S") = mhprev_inv
+               
+        If mhprev_inv = 0 Then
+ 
+            rslts.Cells(j, "O") = "No - Prev Inv Zero"
+ 
+        Else
+ 
+            'interpolate mhs_inv
+ 
+            l_total = l + lprev
+ 
+            slp_new = (mhprev_inv - mhe_inv) / l_total
+ 
+            rslts.Cells(j, "T") = slp_new
+ 
+            mhs_inv_new = mhprev_inv - lprev * slp_new
+ 
+            rslts.Cells(j, "U") = mhs_inv_new
+ 
+        End If
+ 
+    End If
+ 
+ 
+'So this is where I fail.  I basically need to do the interpolation above but for all of the preceding 'pipes and then choose the minimum.      
+'I am stuck at finding the manhole id which i then will need to 'use to find the invert from the manholes table.
+ 
+'something like
+'mhprev_inv(i) = (mh.Cells(mh.Range(mh.Cells(2, mhID), mh.Cells(mhRows, mhID)).Find(mhp(i)).Row,+_
+'                invert)
+'l_total(i) = l + lprev(i)
+'slp_new(i) = (mhprev_inv(i) - mhe_inv) / l_total(i)
+'mhs_inv_new(i) = mhprev_inv(i) - lprev*slp_new(i)
+'rslts.Cells(j, "U") = Application.min(mhs_inv_new())
+ 
+ 
+With pipes.Range("E:E")
+ 
+    Dim mhp() As Variant
+ 
+    ReDim mhp(0 To prevpipes)
+ 
+    n = 0
+ 
+    Set x = .Find(mhs)
+ 
+        If Not x Is Nothing Then
+ 
+        Start = x.Address
+ 
+            Do
+ 
+                mhp(n) = Cells(x.Row, mhstart).Value
+                 
+                lprev(n) = Cells(x.Row, lgnth).Value
+ 
+                n = n + 1
+ 
+        Set x = .FindNext(x)
+ 
+        If x Is Nothing Then
+ 
+            End If
+ 
+            Loop While x.Address <> Start
+ 
+        End If
+ 
+End With
+ 
+j = j + 1
+End If
+ 
+Next
+ 
+mhwb.Close (False)
+pipeswb.Close (False)
+ 
+MsgBox ("Done")
+ 
+End Sub
